@@ -39,7 +39,7 @@ func (s *Server) Start() {
 
 func (s *Server) ListenForConnections() {
 	for {
-    fmt.Println("Accepting Connection...")
+		fmt.Println("Accepting Connection...")
 		conn, err := s.listener.Accept()
 		if err != nil {
 			fmt.Println("Error accepting incoming connection:", err)
@@ -104,22 +104,22 @@ func (c *ConnectionManager) Broadcast(message []byte, sender net.Conn) {
 }
 
 func (c *ConnectionManager) HasConnection(conn net.Conn) bool {
-  hasConnection := false
-  for _, conn_ := range c.connections {
-    if conn == conn_ {
-      hasConnection = true
-    }
-  }
-  return hasConnection
+	hasConnection := false
+	for _, conn_ := range c.connections {
+		if conn == conn_ {
+			hasConnection = true
+		}
+	}
+	return hasConnection
 }
 
 func (c *ConnectionManager) HandleConnect(conn net.Conn) {
-  if !c.HasConnection(conn) {
-    fmt.Println("New connection")
-    c.AddConnection(conn)
-  } else {
-    fmt.Println("Client is already connected...")
-  }
+	if !c.HasConnection(conn) {
+		fmt.Println("New connection")
+		c.AddConnection(conn)
+	} else {
+		fmt.Println("Client is already connected...")
+	}
 	buf := make([]byte, 1024)
 
 	bytesRead, err := conn.Read(buf)
@@ -131,7 +131,7 @@ func (c *ConnectionManager) HandleConnect(conn net.Conn) {
 
 	fmt.Printf("Read [%d] bytes from buffer\n", bytesRead)
 	fmt.Printf("Received: %s\n", buf)
-  c.Broadcast(buf, conn)
+	c.Broadcast(buf, conn)
 }
 
 func (c *ConnectionManager) HandleDisconnect(conn net.Conn) {
