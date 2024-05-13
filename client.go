@@ -41,10 +41,10 @@ func main() {
     }
     SendMessage([]byte(msg), conn)
 
-    // response, err := bufio.NewReader(conn).ReadString('\n')
-    // if err != nil {
-    //   fmt.Println("Error reading response from server:", err)
-    // }
-    // fmt.Println("Response from server: ", response)
+    response, err := bufio.NewReader(conn).ReadString('\n')
+    if err != nil {
+      fmt.Println("Error reading response from server:", err)
+    }
+    fmt.Println("Response from server: ", response)
   }
 }
