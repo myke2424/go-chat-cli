@@ -1,34 +1,51 @@
 package main
 
-import "fmt"
-import "os"
-import "strings"
-import "bufio"
-import "net"
+import (
+	"bufio"
+	"fmt"
+	"log"
+	"net"
+	"os"
+	"strings"
+)
 
 func Connect(host string, port int) net.Conn {
 	address := fmt.Sprintf("%s:%d", host, port)
-	fmt.Printf("Connecting to server [%s]\n", address)
+	log.Printf("Connecting to server [%s]\n", address)
 	conn, err := net.Dial("tcp", address)
 	if err != nil {
-		panic("Failed to connect to server!")
+		log.Fatalln("Failed to connect to server!", err)
 	}
-	fmt.Println("Connected")
+	log.Println("Connected")
 	return conn
 }
 
 func SendMessage(msg []byte, conn net.Conn) {
-	fmt.Printf("Sending message to server: [%s]\n", string(msg))
+	log.Printf("Sending message to server: [%s]\n", string(msg))
 	_, err := conn.Write(msg)
 	if err != nil {
-		panic("Failed to send message to server")
+		log.Fatalln("Failed to send message to server", err)
 	}
-	fmt.Println("Message sent")
+	log.Println("Message sent")
+}
+
+func HandleServerMessages(conn net.Conn) {
+	for {
+		response, err := bufio.NewReader(conn).ReadString('\n')
+		if err != nil {
+			log.Println("Error reading response from server:", err)
+		}
+		log.Println("Response from server: ", response)
+	}
 }
 
 func main() {
 	conn := Connect("localhost", 8080)
 	defer conn.Close()
+	go HandleServerMessages(conn) // Seperate goroutine to handle messages from the server
+
+	// Reading from stdin is the "UI" layer in this case, refactor this to make it more flexible
+	// Need two goroutines, one for sending and one for receiving messages.
 	scanner := bufio.NewScanner(os.Stdin)
 
 	for {
@@ -36,15 +53,10 @@ func main() {
 		msg := scanner.Text()
 
 		if strings.ToLower(msg) == "exit" {
-			fmt.Println("Exiting chat room")
+			log.Println("Exiting chat room")
 			break
 		}
 		SendMessage([]byte(msg), conn)
 
-		response, err := bufio.NewReader(conn).ReadString('\n')
-		if err != nil {
-			fmt.Println("Error reading response from server:", err)
-		}
-		fmt.Println("Response from server: ", response)
 	}
 }
