@@ -57,6 +57,12 @@ func (s *Server) ListenForConnections() {
 	}
 }
 
+type Connection struct {
+	id       string
+	username string
+	conn     net.Conn
+}
+
 type ConnectionManager struct {
 	connections []net.Conn
 }
