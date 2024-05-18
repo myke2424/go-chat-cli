@@ -1,7 +1,10 @@
 package main
 
-import "fmt"
-import "net"
+import (
+	"fmt"
+	"log"
+	"net"
+)
 
 /*   Chat-room server (IRC analog) - First iteration
  *
@@ -15,6 +18,12 @@ import "net"
  *  - Clients can connect to the chat room server via a TCP socket
  *  - Can send messages via stdinput
  *  - Can receive messages
+ *  - Need some unique name on connect (UserId) or something...
+ *
+ *  Server JSON-RPC Methods.... [sendChatMsg, createUser, createChatRoom, joinChatRoom, leaveChatRoom]
+ *                                req     req         req            req      req            req
+ *
+ *  Transport messages following JSON-RPC over TCP sockets...
  *
  */
 
@@ -28,23 +37,22 @@ func (s *Server) Start() {
 	listener, err := net.Listen("tcp", fmt.Sprintf(":%d", s.port))
 
 	if err != nil {
-		fmt.Println("Error starting server: ", err)
-		panic("Failed to start server! Exiting")
+		log.Fatalf("Failed to start server! Exiting", err)
 	}
 
 	s.listener = listener
-	fmt.Printf("Server starting... Listening on port: [%d] \n", s.port)
+	log.Printf("Server starting... Listening on port: [%d] \n", s.port)
 	s.ListenForConnections()
 }
 
 func (s *Server) ListenForConnections() {
 	for {
-		fmt.Println("Accepting Connection...")
 		conn, err := s.listener.Accept()
 		if err != nil {
-			fmt.Println("Error accepting incoming connection:", err)
+			log.Println("Error accepting incoming connection:", err)
 			continue
 		}
+		log.Println("Connection Accepted")
 		go s.connectionManager.HandleConnect(conn)
 	}
 }
@@ -58,13 +66,12 @@ func (c *ConnectionManager) Init() {
 }
 
 func (c *ConnectionManager) AddConnection(connection net.Conn) {
-	fmt.Println("Adding new connection")
 	c.connections = append(c.connections, connection)
-	fmt.Println("Connection Added")
+	log.Println("New connection Added")
 }
 
 func (c *ConnectionManager) RemoveConnection(connection net.Conn) {
-	fmt.Println("Removing connection")
+	log.Println("Removing connection")
 	newConnections := make([]net.Conn, 0)
 
 	for _, conn := range c.connections {
@@ -74,18 +81,18 @@ func (c *ConnectionManager) RemoveConnection(connection net.Conn) {
 	}
 
 	c.connections = newConnections
-	fmt.Println("Connection removed")
+	log.Println("Connection removed")
 }
 
 func (c *ConnectionManager) Send(message []byte, conn net.Conn) {
-	fmt.Printf("Sending message: [%s]\n", string(message))
+	log.Printf("Sending message: [%s]\n", string(message))
 	_, err := conn.Write(message)
 
 	if err != nil {
-		fmt.Println("Error sending message: ", err)
+		log.Println("Error sending message: ", err)
 		return
 	}
-	fmt.Println("Sent message successfully")
+	log.Println("Sent message successfully")
 }
 
 // Broadcast a message to all connections - excluding the connection who sent the message
@@ -97,7 +104,7 @@ func (c *ConnectionManager) Broadcast(message []byte, sender net.Conn) {
 		}
 	}
 
-	fmt.Println("Broadcasting message to all connections: [%s]", string(message))
+	log.Printf("Broadcasting message to all connections: [%s] \n", string(message))
 	for _, conn := range receivers {
 		c.Send(message, conn)
 	}
@@ -115,32 +122,34 @@ func (c *ConnectionManager) HasConnection(conn net.Conn) bool {
 
 func (c *ConnectionManager) HandleConnect(conn net.Conn) {
 	if !c.HasConnection(conn) {
-		fmt.Println("New connection")
 		c.AddConnection(conn)
-	} else {
-		fmt.Println("Client is already connected...")
 	}
+
+	// Should I be doing this on a loop? Clear buffer iteration
 	buf := make([]byte, 1024)
 
-	bytesRead, err := conn.Read(buf)
+	for {
+		bytesRead, err := conn.Read(buf) // Does 0 rv mean conn closed???
 
-	if err != nil {
-		fmt.Println("Error reading buffer", err.Error())
-		return
+		if err != nil {
+			// TODO: Catch error for large buffer size and push message to client msg is 2 big
+			log.Fatalln("Error reading buffer", err.Error())
+			return
+		}
+
+		log.Printf("Read [%d] bytes from buffer\n", bytesRead)
+		log.Printf("Received: %s\n", buf)
+		c.Broadcast(buf, conn)
+		clear(buf)
 	}
-
-	fmt.Printf("Read [%d] bytes from buffer\n", bytesRead)
-	fmt.Printf("Received: %s\n", buf)
-	c.Broadcast(buf, conn)
 }
 
 func (c *ConnectionManager) HandleDisconnect(conn net.Conn) {
-	fmt.Println("Handling client disconnect")
+	log.Println("Handling client disconnect")
 	c.RemoveConnection(conn)
 }
 
 func main() {
-	fmt.Println("Chatting..")
 	cManager := &ConnectionManager{}
 	cManager.Init()
 	server := &Server{port: 8080, connectionManager: cManager, listener: nil}
