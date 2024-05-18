@@ -30,12 +30,14 @@ func SendMessage(msg []byte, conn net.Conn) {
 }
 
 func HandleServerMessages(conn net.Conn) {
+	buf := make([]byte, 1024)
 	for {
-		response, err := bufio.NewReader(conn).ReadString('\n')
+		_, err := bufio.NewReader(conn).Read(buf)
 		if err != nil {
 			log.Println("Error reading response from server:", err)
 		}
-		log.Println("Response from server: ", response)
+		log.Printf("Response from server: [%s] \n", buf)
+		clear(buf)
 	}
 }
 

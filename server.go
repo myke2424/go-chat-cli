@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"log"
 	"net"
+
+	"github.com/google/uuid"
 )
 
 /*   Chat-room server (IRC analog) - First iteration
@@ -52,47 +54,40 @@ func (s *Server) ListenForConnections() {
 			log.Println("Error accepting incoming connection:", err)
 			continue
 		}
-		log.Println("Connection Accepted")
-		go s.connectionManager.HandleConnect(conn)
+		connectionId := uuid.New().String()
+		log.Printf("Connection Accepted. ConnectionId = [%s]\n", connectionId)
+		connection := Connection{id: connectionId, conn: conn}
+		go s.connectionManager.HandleConnect(connection)
 	}
 }
 
 type Connection struct {
-	id       string
-	username string
-	conn     net.Conn
+	id   string
+	conn net.Conn
 }
 
 type ConnectionManager struct {
-	connections []net.Conn
+	connections map[string]Connection
 }
 
 func (c *ConnectionManager) Init() {
-	c.connections = make([]net.Conn, 0)
+	c.connections = make(map[string]Connection)
 }
 
-func (c *ConnectionManager) AddConnection(connection net.Conn) {
-	c.connections = append(c.connections, connection)
-	log.Println("New connection Added")
+func (c *ConnectionManager) AddConnection(connection Connection) {
+	c.connections[connection.id] = connection
+	log.Printf("New connection Added [%s}\n", connection.id)
 }
 
-func (c *ConnectionManager) RemoveConnection(connection net.Conn) {
-	log.Println("Removing connection")
-	newConnections := make([]net.Conn, 0)
-
-	for _, conn := range c.connections {
-		if conn != connection {
-			newConnections = append(newConnections, conn)
-		}
-	}
-
-	c.connections = newConnections
+func (c *ConnectionManager) RemoveConnection(connection Connection) {
+	log.Printf("Removing connection: [%s]\n", connection.id)
+	delete(c.connections, connection.id)
 	log.Println("Connection removed")
 }
 
-func (c *ConnectionManager) Send(message []byte, conn net.Conn) {
-	log.Printf("Sending message: [%s]\n", string(message))
-	_, err := conn.Write(message)
+func (c *ConnectionManager) Send(message []byte, connection Connection) {
+	log.Printf("Sending message: [%s] to connection: [%s} \n", string(message), connection.id)
+	_, err := connection.conn.Write(message)
 
 	if err != nil {
 		log.Println("Error sending message: ", err)
@@ -102,12 +97,17 @@ func (c *ConnectionManager) Send(message []byte, conn net.Conn) {
 }
 
 // Broadcast a message to all connections - excluding the connection who sent the message
-func (c *ConnectionManager) Broadcast(message []byte, sender net.Conn) {
-	receivers := make([]net.Conn, 0)
+func (c *ConnectionManager) Broadcast(message []byte, sender Connection) {
+	receivers := make([]Connection, 0)
 	for _, conn := range c.connections {
 		if conn != sender {
 			receivers = append(receivers, conn)
 		}
+	}
+
+	if len(receivers) == 0 {
+		log.Println("No receivers, not broadcasting message.")
+		return
 	}
 
 	log.Printf("Broadcasting message to all connections: [%s] \n", string(message))
@@ -116,7 +116,7 @@ func (c *ConnectionManager) Broadcast(message []byte, sender net.Conn) {
 	}
 }
 
-func (c *ConnectionManager) HasConnection(conn net.Conn) bool {
+func (c *ConnectionManager) HasConnection(conn Connection) bool {
 	hasConnection := false
 	for _, conn_ := range c.connections {
 		if conn == conn_ {
@@ -126,31 +126,31 @@ func (c *ConnectionManager) HasConnection(conn net.Conn) bool {
 	return hasConnection
 }
 
-func (c *ConnectionManager) HandleConnect(conn net.Conn) {
-	if !c.HasConnection(conn) {
-		c.AddConnection(conn)
+func (c *ConnectionManager) HandleConnect(connection Connection) {
+	if !c.HasConnection(connection) {
+		c.AddConnection(connection)
 	}
 
 	// Should I be doing this on a loop? Clear buffer iteration
 	buf := make([]byte, 1024)
 
 	for {
-		bytesRead, err := conn.Read(buf) // Does 0 rv mean conn closed???
+		bytesRead, err := connection.conn.Read(buf) // Does 0 rv mean conn closed???
 
 		if err != nil {
 			// TODO: Catch error for large buffer size and push message to client msg is 2 big
-			log.Fatalln("Error reading buffer", err.Error())
+			log.Fatalln("Error reading connection buffer", err.Error())
 			return
 		}
 
-		log.Printf("Read [%d] bytes from buffer\n", bytesRead)
-		log.Printf("Received: %s\n", buf)
-		c.Broadcast(buf, conn)
+		log.Printf("Read [%d] bytes from connection [%s} \n", bytesRead, connection.id)
+		log.Printf("Message: %s\n", buf)
+		c.Broadcast(buf, connection)
 		clear(buf)
 	}
 }
 
-func (c *ConnectionManager) HandleDisconnect(conn net.Conn) {
+func (c *ConnectionManager) HandleDisconnect(conn Connection) {
 	log.Println("Handling client disconnect")
 	c.RemoveConnection(conn)
 }

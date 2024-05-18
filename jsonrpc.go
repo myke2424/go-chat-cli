@@ -50,15 +50,17 @@ func (d *RequestDispatcher) AddMethod(method string, handler RequestHandler) {
 	d.handlers[method] = handler
 }
 
-func (d *RequestDispatcher) dispatch(request JsonRpcRequest) {
+func (d *RequestDispatcher) invokeHandler(request JsonRpcRequest) JsonRpcResponse {
 	handler, ok := d.handlers[request.Method]
-
 	if !ok {
 		// TODO: Send rpc error back to client, method not found
 		panic("rpc method not found")
 	}
+	return handler(request)
+}
 
-	response := handler(request)
+func (d *RequestDispatcher) dispatch(request JsonRpcRequest) {
+	response := d.invokeHandler(request)
 	responseJson, err := json.Marshal(response)
 	if err != nil {
 		// TODO: If this fails... Send rpc internal server error to client
