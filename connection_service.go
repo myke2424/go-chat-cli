@@ -24,11 +24,24 @@ type ConnectionStore interface {
 	Get(connectionId string) (*Connection, bool)
 	List() []*Connection
 	Delete(connectionId string)
+	Count() int
 }
 
 // Store connections in memory with a map
 type InMemoryConnectionStore struct {
 	connections map[string]*Connection
+	count       int
+}
+
+// Create a new in-memory connection store
+func NewConnectionStore() *InMemoryConnectionStore {
+	connections := make(map[string]*Connection)
+	return &InMemoryConnectionStore{connections: connections}
+}
+
+// Get the number of connections
+func (s *InMemoryConnectionStore) Count() int {
+	return s.count
 }
 
 // Get a connection by ID
@@ -54,11 +67,13 @@ func (s *InMemoryConnectionStore) List() []*Connection {
 // Remove a connection from the map
 func (s *InMemoryConnectionStore) Delete(connectionId string) {
 	delete(s.connections, connectionId)
+	s.count--
 }
 
 // Insert a connection into the map
 func (s *InMemoryConnectionStore) Add(connection *Connection) {
 	s.connections[connection.id] = connection
+	s.count++
 }
 
 // Connection Service for interfacing with connections
@@ -94,15 +109,16 @@ func (s *ConnectionService) GetConnection(connectionId string) (*Connection, boo
 }
 
 // Send a message to the connection
-func (s *ConnectionService) SendMessage(msg []byte, connection *Connection) {
+func (s *ConnectionService) SendMessage(msg []byte, connection *Connection) error {
 	log.Printf("Sending message: [%s] to connection: [%s} \n", string(msg), connection.id)
 	_, err := connection.Write(msg)
 
 	if err != nil {
 		log.Println("Error sending message: ", err)
-		return
+		return err
 	}
 	log.Println("Sent message successfully")
+	return nil
 
 }
 
@@ -116,17 +132,17 @@ func (s *ConnectionService) Broadcast(msg []byte, exclude []*Connection) {
 		return connectionMap
 	}
 
-	excludedConnections := sliceToMapFn(exclude)
 	connections := s.store.List()
-
 	if len(connections) == 0 {
 		log.Println("No receivers, not broadcasting message.")
 		return
 	}
 
+	excludedConnections := sliceToMapFn(exclude)
 	log.Printf("Broadcasting message to all connections: [%s] \n", string(msg))
 	for _, c := range connections {
 		if _, ok := excludedConnections[c.id]; !ok {
+			// fail silently on send
 			s.SendMessage(msg, c)
 		}
 	}
