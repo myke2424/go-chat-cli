@@ -6,73 +6,59 @@ import (
 	"log"
 )
 
-const JsonRpcVersionTwo = "2.0"
-
-type JsonRpcRequest struct {
-	JsonRpc string         `json:"jsonrpc"`
-	Method  string         `json:"method"`
-	Params  map[string]any `json:"params"`
-	Id      string         `json:"id"`
-}
-
-type JsonRpcNotification struct {
-	JsonRpc string         `json:"jsonrpc"`
-	Method  string         `json:"method"`
-	Params  map[string]any `json:"params"`
-}
-
-type JsonRpcResponse struct {
-	JsonRpc string        `json:"jsonrpc"`
-	Result  any           `json:"result,omitempty"`
-	Error   *JsonRpcError `json:"error,omitempty"`
-	Id      string        `json:"id"`
-}
-
-type JsonRpcError struct {
-	Code    int    `json:"code"`
-	Message string `json:"message"`
-	Data    any    `json:"data"`
-}
-
+// JSON-RPC Handler function type
 type RequestHandler func(request JsonRpcRequest) JsonRpcResponse
 
-type RequestDispatcher struct {
-	handlers  map[string]RequestHandler
-	transport io.Writer
+// JSON-RPC Request dispatcher for handling requests
+type JsonRpcRequestDispatcher struct {
+	handlers map[string]RequestHandler
 }
 
-func (d *RequestDispatcher) Init() {
-	d.handlers = make(map[string]RequestHandler)
-}
-
-func (d *RequestDispatcher) AddMethod(method string, handler RequestHandler) {
+// Register a JSON-RPC Method with an associated handler func
+func (d *JsonRpcRequestDispatcher) AddMethod(method string, handler RequestHandler) {
 	log.Printf("Adding rpc method: [%s]", method)
 	d.handlers[method] = handler
 }
 
-func (d *RequestDispatcher) invokeHandler(request JsonRpcRequest) JsonRpcResponse {
+// Invoke the handler if it exists
+func (d *JsonRpcRequestDispatcher) invokeHandler(request JsonRpcRequest) JsonRpcResponse {
 	handler, ok := d.handlers[request.Method]
 	if !ok {
-		// TODO: Send rpc error back to client, method not found
-		panic("rpc method not found")
+		log.Printf("RPC Method not supported [%s]\n", request.Method)
+		rpcError := &JsonRpcError{Code: -32601, Message: "Method not found"}
+		return JsonRpcResponse{JsonRpc: request.JsonRpc, Id: request.Id, Error: rpcError}
 	}
 	return handler(request)
 }
 
-func (d *RequestDispatcher) dispatch(request JsonRpcRequest) {
+// Main interface for handling a JSON-RPC request and sending the response back to the client
+func (d *JsonRpcRequestDispatcher) Dispatch(request JsonRpcRequest, destination io.Writer) error {
 	response := d.invokeHandler(request)
 	responseJson, err := json.Marshal(response)
+
 	if err != nil {
-		// TODO: If this fails... Send rpc internal server error to client
-		panic("Failed to serialize rpc response")
+		log.Println("Failed to serialize json-rpc response to JSON")
+		errorResponse := JsonRpcResponse{Id: request.Id, JsonRpc: request.JsonRpc, Error: &JsonRpcError{Code: -32700, Message: "Parse error"}}
+		responseJson, err = json.Marshal(errorResponse)
+		if err != nil {
+			return err
+		}
 	}
 
-	log.Println("Sending json rpc response")
-	_, err = d.transport.Write(responseJson)
+	log.Println("Sending json-rpc response")
+	_, err = destination.Write(responseJson)
 	if err != nil {
-		panic("Failed to send response")
+		log.Println("Failed to send json-rpc response to client")
+		return err
 	}
+
 	log.Println("Response sent")
-	// TODO: Send response back to client
+	return nil
+}
 
+// Initialise a new dispatcher
+func NewDispatcher() *JsonRpcRequestDispatcher {
+	handlers := make(map[string]RequestHandler)
+	dispatcher := &JsonRpcRequestDispatcher{handlers: handlers}
+	return dispatcher
 }
