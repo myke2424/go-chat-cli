@@ -70,6 +70,7 @@ func (s *Server) Listen() {
 		connectionId := uuid.New().String()
 		log.Printf("Connection Accepted. ConnectionId = [%s]\n", connectionId)
 		connection := &Connection{id: connectionId, Conn: conn}
+		s.connectionService.AddConnection(connection)
 		go s.HandleConnectionMessages(connection)
 	}
 }
