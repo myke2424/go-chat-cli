@@ -56,7 +56,7 @@ func (e *JsonRpcError) String() string {
 }
 
 type ChatRequestParams struct {
-	Msg string `json:"msg"`
+	Msg []byte `json:"msg"`
 }
 
 type SuccessResult struct {
@@ -64,7 +64,7 @@ type SuccessResult struct {
 }
 
 type ChatMessageNotification struct {
-	Msg string `json:"msg"`
+	Msg []byte `json:"msg"`
 }
 
 // JSON-RPC Handler function type

@@ -81,6 +81,7 @@ func (s *Server) HandleConnectionMessages(connection *Connection) {
 
 	for {
 		bytesRead, err := connection.Read(buf)
+		message := buf[:bytesRead]
 		if err != nil {
 			log.Fatalln("Error reading connection buffer", err.Error())
 		}
@@ -88,7 +89,7 @@ func (s *Server) HandleConnectionMessages(connection *Connection) {
 		log.Printf("Read [%d] bytes from connection [%s} \n", bytesRead, connection.id)
 		log.Printf("Message: %s\n", buf)
 
-		err = json.Unmarshal(buf, &request)
+		err = json.Unmarshal(message, &request)
 		if err != nil {
 			log.Printf("Failed deserializing message [%s] into JSON-RPC Request\n", buf)
 			connection.Write([]byte("Invalid Request, must follow JSON-RPC Request schema"))
@@ -96,6 +97,13 @@ func (s *Server) HandleConnectionMessages(connection *Connection) {
 		}
 
 		s.dispatcher.Dispatch(request, connection)
+
+		// TODO: Maybe register notification callbacks?
+		if request.Method == "chat" {
+			connections := s.connectionService.ListConnections()
+			log.Printf("[%d] connections on", len(connections))
+		}
+
 		clear(buf)
 	}
 }

@@ -19,7 +19,7 @@ type JsonRpcClient struct {
 }
 
 // Build a JSON-RPC request
-func (c *JsonRpcClient) BuildRequest(params any, method string) JsonRpcRequest {
+func (c *JsonRpcClient) BuildRequest(params []byte, method string) JsonRpcRequest {
 	requestId := uuid.New().String()
 	request := JsonRpcRequest{Id: requestId, JsonRpc: JsonRpcVersion, Method: method, Params: params}
 	return request
@@ -95,7 +95,7 @@ func (c *JsonRpcClient) HandleNotifications() {
 
 // Send a request to chat
 func (c *JsonRpcClient) SendChatRequest(msg []byte) JsonRpcResponse {
-	params := ChatRequestParams{Msg: msg}
+	params, _ := json.Marshal(ChatRequestParams{Msg: msg})
 	request := c.BuildRequest(params, ChatRpcMethod)
 	response := c.SendAndRecv(request)
 	return response
@@ -132,6 +132,6 @@ func main() {
 			log.Println("Exiting chat room")
 			break
 		}
-		client.SendChatRequest([]byte(msg))
+		go client.SendChatRequest([]byte(msg))
 	}
 }
