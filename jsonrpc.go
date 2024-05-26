@@ -20,7 +20,7 @@ const (
 type JsonRpcRequest struct {
 	JsonRpc string `json:"jsonrpc"`
 	Method  string `json:"method"`
-	Params  any    `json:"params"`
+	Params  []byte `json:"params"`
 	Id      string `json:"id"`
 }
 
@@ -31,7 +31,7 @@ func (r JsonRpcRequest) String() string {
 type JsonRpcNotification struct {
 	JsonRpc string `json:"jsonrpc"`
 	Method  string `json:"method"`
-	Params  any    `json:"params"`
+	Params  []byte `json:"params"`
 }
 
 func (n JsonRpcNotification) String() string {
@@ -56,7 +56,15 @@ func (e *JsonRpcError) String() string {
 }
 
 type ChatRequestParams struct {
-	Msg []byte `json:"msg"`
+	Msg string `json:"msg"`
+}
+
+type SuccessResult struct {
+	Success bool `json:"success"`
+}
+
+type ChatMessageNotification struct {
+	Msg string `json:"msg"`
 }
 
 // JSON-RPC Handler function type

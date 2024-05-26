@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"io"
+	"log"
 	"testing"
 )
 
@@ -17,8 +18,7 @@ type AddRequestResult struct {
 
 func AddRequestHandler(request JsonRpcRequest) JsonRpcResponse {
 	var params AddRequestParams
-	paramsJson, _ := json.Marshal(request.Params)
-	json.Unmarshal(paramsJson, &params)
+	json.Unmarshal(request.Params, &params)
 	return JsonRpcResponse{Id: request.Id, JsonRpc: request.JsonRpc, Result: &AddRequestResult{Sum: params.X + params.Y}}
 }
 
@@ -54,8 +54,10 @@ func TestRpcDispatch(t *testing.T) {
 	t.Run("request is processed and response is delivered to the destination", func(t *testing.T) {
 		dispatcher := DispatcherFixture()
 		fakeWriter := FakeWriter{data: make([]string, 0)}
+		params, _ := json.Marshal(AddRequestParams{X: 5, Y: 10})
+		request := JsonRpcRequest{Id: "123", JsonRpc: JsonRpcVersion, Method: "add", Params: params}
 
-		request := JsonRpcRequest{Id: "123", JsonRpc: JsonRpcVersion, Method: "add", Params: AddRequestParams{X: 5, Y: 10}}
+		log.Println("HELLO WORLD", string(request.Params))
 		dispatcher.Dispatch(request, &fakeWriter)
 
 		expectedResponse := `{"jsonrpc":"2.0","result":{"sum":15},"id":"123"}`
@@ -85,10 +87,9 @@ func TestRpcDispatch(t *testing.T) {
 		notification := JsonRpcNotification{JsonRpc: JsonRpcVersion, Method: "hello"}
 		dispatcher.SendNotification(notification, fakeWriters)
 
-		expectedNotification := `{"jsonrpc":"2.0","method":"hello","params":null}`
 		for _, writer := range fakeWriters {
 			fakeWriter := writer.(*FakeWriter)
-			fakeWriter.AssertMessageReceived(t, expectedNotification)
+			fakeWriter.AssertMessageReceived(t, `{"jsonrpc":"2.0","method":"hello","params":null}`)
 		}
 
 	})

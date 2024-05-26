@@ -33,41 +33,16 @@ import (
  *  TODO: Add wrapped errors for JSON-RPC error codes and message
  */
 
+// Should the dispatcher have the connection manager struct?
+
 // TODO: Have some sort of config struct + yaml file to read in configuration as well
 
 // TCP Server
 type Server struct {
 	port              int
-	connectionManager *ConnectionManager
 	listener          net.Listener
-	dispatcher        *JsonRpcRequestDispatcher
-}
-
-// Connection wrapper which includes a unique ID
-type Connection struct {
-	id string
-	net.Conn
-}
-
-func (c *Connection) Read(b []byte) (n int, err error) {
-	return c.conn.Read(b)
-}
-
-func (c *Connection) Write(b []byte) (n int, err error) {
-	return c.conn.Write(b)
-}
-
-// Struct for managing connection(s) state
-type ConnectionManager struct {
-	connections map[string]Connection
-}
-
-// JSON-RPC Handler function type
-type RequestHandler func(request JsonRpcRequest) JsonRpcResponse
-
-// JSON-RPC Request dispatcher for handling requests
-type JsonRpcRequestDispatcher struct {
-	handlers map[string]RequestHandler
+	connectionService *ConnectionService
+	dispatcher        *JsonRpcDispatcher
 }
 
 // Start the server and listen for connections (Main entry point)
@@ -87,177 +62,59 @@ func (s *Server) Start() {
 func (s *Server) Listen() {
 	for {
 		conn, err := s.listener.Accept()
+		log.Println("New connection accepted")
 		if err != nil {
 			log.Println("Error accepting incoming connection:", err)
 			continue
 		}
 		connectionId := uuid.New().String()
 		log.Printf("Connection Accepted. ConnectionId = [%s]\n", connectionId)
-		connection := Connection{id: connectionId, conn: conn}
-		go s.connectionManager.HandleConnect(connection)
+		connection := &Connection{id: connectionId, Conn: conn}
+		go s.HandleConnectionMessages(connection)
 	}
 }
 
-// Initialize the connection manager
-func (c *ConnectionManager) Init() {
-	c.connections = make(map[string]Connection)
-}
-
-// Add a connection
-func (c *ConnectionManager) AddConnection(connection Connection) {
-	c.connections[connection.id] = connection
-	log.Printf("New connection Added [%s}\n", connection.id)
-}
-
-// Remove a connection
-func (c *ConnectionManager) RemoveConnection(connection Connection) {
-	log.Printf("Removing connection: [%s]\n", connection.id)
-	delete(c.connections, connection.id)
-	log.Println("Connection removed")
-}
-
-// Send a message to a connection
-func (c *ConnectionManager) Send(message []byte, connection Connection) {
-	log.Printf("Sending message: [%s] to connection: [%s} \n", string(message), connection.id)
-	_, err := connection.conn.Write(message)
-
-	if err != nil {
-		log.Println("Error sending message: ", err)
-		return
-	}
-	log.Println("Sent message successfully")
-}
-
-// Broadcast a message to all connections - excluding the connection who sent the message
-// TODO: Add exclude method for exlcuding slice of connections
-func (c *ConnectionManager) Broadcast(message []byte, sender Connection) {
-	receivers := make([]Connection, 0)
-	for _, conn := range c.connections {
-		if conn != sender {
-			receivers = append(receivers, conn)
-		}
-	}
-
-	if len(receivers) == 0 {
-		log.Println("No receivers, not broadcasting message.")
-		return
-	}
-
-	log.Printf("Broadcasting message to all connections: [%s] \n", string(message))
-	for _, conn := range receivers {
-		c.Send(message, conn)
-	}
-}
-
-// Check if the connection exists
-func (c *ConnectionManager) HasConnection(conn Connection) bool {
-	hasConnection := false
-	for _, conn_ := range c.connections {
-		if conn == conn_ {
-			hasConnection = true
-		}
-	}
-	return hasConnection
-}
-
-// Handler for new connections
-func (c *ConnectionManager) HandleConnect(connection Connection) {
-	if !c.HasConnection(connection) {
-		c.AddConnection(connection)
-	}
-
-	// Extract out reading from the connection socket into seperate go-routine.
-	// HandleConnect should just add the connection to list of connections
-
-	// Should I be doing this on a loop? Clear buffer iteration
+// Hanle incoming messages from a connection
+func (s *Server) HandleConnectionMessages(connection *Connection) {
 	buf := make([]byte, 1024)
+	var request JsonRpcRequest
 
 	for {
-		bytesRead, err := connection.conn.Read(buf) // Does 0 rv mean conn closed???
-
+		bytesRead, err := connection.Read(buf)
 		if err != nil {
-			// TODO: Catch error for large buffer size and push message to client msg is 2 big
 			log.Fatalln("Error reading connection buffer", err.Error())
-			return
 		}
 
 		log.Printf("Read [%d] bytes from connection [%s} \n", bytesRead, connection.id)
 		log.Printf("Message: %s\n", buf)
-		c.Broadcast(buf, connection)
-		clear(buf)
-	}
-}
 
-// Handler for clients who have disconnected
-func (c *ConnectionManager) HandleDisconnect(conn Connection) {
-	log.Println("Handling client disconnect")
-	c.RemoveConnection(conn)
-}
-
-func (d *JsonRpcRequestDispatcher) Init() {
-	d.handlers = make(map[string]RequestHandler)
-}
-
-// Main interface for listening for messages
-func (d *JsonRpcRequestDispatcher) ListenForMessages() {
-	buf := make([]byte, 1024)
-	for {
-		bytesRead, err := connection.conn.Read(buf) // Does 0 rv mean conn closed???
-
+		err = json.Unmarshal(buf, &request)
 		if err != nil {
-			// TODO: Catch error for large buffer size and push message to client msg is 2 big
-			log.Fatalln("Error reading connection buffer", err.Error())
-			return
+			log.Printf("Failed deserializing message [%s] into JSON-RPC Request\n", buf)
+			connection.Write([]byte("Invalid Request, must follow JSON-RPC Request schema"))
+			continue
 		}
 
-		log.Printf("Read [%d] bytes from connection [%s} \n", bytesRead, connection.id)
-		log.Printf("Message: %s\n", buf)
-		c.Broadcast(buf, connection)
+		s.dispatcher.Dispatch(request, connection)
 		clear(buf)
 	}
-
 }
 
-// Register a JSON-RPC Method with an associated handler func
-func (d *JsonRpcRequestDispatcher) AddMethod(method string, handler RequestHandler) {
-	log.Printf("Adding rpc method: [%s]", method)
-	d.handlers[method] = handler
-}
-
-// Invoke the handler if it exists
-func (d *JsonRpcRequestDispatcher) InvokeHandler(request JsonRpcRequest) JsonRpcResponse {
-	handler, ok := d.handlers[request.Method]
-	if !ok {
-		// TODO: Send rpc error back to client, method not found
-		panic("rpc method not found")
-	}
-	return handler(request)
-}
-
-// Main interface for handling a JSON-RPC request and sending the response back to the client
-func (d *JsonRpcRequestDispatcher) Dispatch(request JsonRpcRequest, conn Connection) {
-	response := d.InvokeHandler(request)
-	responseJson, err := json.Marshal(response)
+func ChatMessageHandler(request JsonRpcRequest) JsonRpcResponse {
+	var params ChatRequestParams
+	err := json.Unmarshal(request.Params, &params)
 	if err != nil {
-		// TODO: If this fails... Send rpc internal server error to client
-		panic("Failed to serialize rpc response")
+		errorResponse := JsonRpcResponse{Id: request.Id, JsonRpc: request.JsonRpc, Error: &JsonRpcError{Code: -32600, Message: "Invalid Request"}}
+		return errorResponse
 	}
-
-	log.Println("Sending json rpc response")
-	_, err = conn.Write(responseJson)
-	if err != nil {
-		panic("Failed to send response")
-	}
-	log.Println("Response sent")
-
+	response := JsonRpcResponse{Id: request.Id, JsonRpc: request.JsonRpc, Result: SuccessResult{Success: true}}
+	return response
 }
 
 func main() {
-	dispatcher := &JsonRpcRequestDispatcher{}
-	dispatcher.Init()
-	manager := &ConnectionManager{}
-	manager.Init()
-
-	server := &Server{port: 8080, connectionManager: manager, listener: nil, dispatcher: dispatcher}
+	dispatcher := NewDispatcher()
+	dispatcher.AddMethod("chat", ChatMessageHandler)
+	connectionService := &ConnectionService{store: NewConnectionStore()}
+	server := &Server{port: 8080, connectionService: connectionService, dispatcher: dispatcher}
 	server.Start()
 }
