@@ -3,7 +3,6 @@ package main
 import (
 	"encoding/json"
 	"io"
-	"log"
 	"testing"
 )
 
@@ -19,7 +18,9 @@ type AddRequestResult struct {
 func AddRequestHandler(request JsonRpcRequest) JsonRpcResponse {
 	var params AddRequestParams
 	json.Unmarshal(request.Params, &params)
-	return JsonRpcResponse{Id: request.Id, JsonRpc: request.JsonRpc, Result: &AddRequestResult{Sum: params.X + params.Y}}
+	result := AddRequestResult{Sum: params.X + params.Y}
+	resultJson, _ := json.Marshal(result)
+	return JsonRpcResponse{Id: request.Id, JsonRpc: request.JsonRpc, Result: resultJson}
 }
 
 func DispatcherFixture() *JsonRpcDispatcher {
@@ -57,7 +58,6 @@ func TestRpcDispatch(t *testing.T) {
 		params, _ := json.Marshal(AddRequestParams{X: 5, Y: 10})
 		request := JsonRpcRequest{Id: "123", JsonRpc: JsonRpcVersion, Method: "add", Params: params}
 
-		log.Println("HELLO WORLD", string(request.Params))
 		dispatcher.Dispatch(request, &fakeWriter)
 
 		expectedResponse := `{"jsonrpc":"2.0","result":{"sum":15},"id":"123"}`

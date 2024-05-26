@@ -8,3 +8,7 @@ server:
 client:
 	go run src/client.go src/jsonrpc.go
 
+# Run tests
+test:
+	go test src/jsonrpc.go src/jsonrpc_test.go src/connection_service.go src/connection_service_test.go
+

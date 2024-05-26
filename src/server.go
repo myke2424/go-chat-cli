@@ -3,39 +3,12 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net"
 
 	"github.com/google/uuid"
 )
-
-/*   Chat-room server (IRC analog) - First iteration
- *
- *   Connection requirements:
- *   - Server can handle multiple connections concurrently
- *   - Server can fan-out messages to all connected clients
- *   - Server will handle when the client disconnects (discard active client session)
- *   - Start serial impl first, then parallelize
- *
- *  Chat-room client requirements:
- *  - Clients can connect to the chat room server via a TCP socket
- *  - Can send messages via stdinput
- *  - Can receive messages
- *  - Need some unique name on connect (UserId) or something...
- *
- *  Server JSON-RPC Methods.... [sendChatMsg, createUser, createChatRoom, joinChatRoom, leaveChatRoom, listChatRooms, listUsers?, PrivateMessageUser]
- *                                req     req         req            req      req            req
- *
- *  Transport messages following JSON-RPC over TCP sockets...
- *    Pub/sub for notifications... Subscribe to chat ROOM when joined.
- *
- *  Server maintains a message history using a stack ~_~
- *  TODO: Add wrapped errors for JSON-RPC error codes and message
- */
-
-// Should the dispatcher have the connection manager struct?
-
-// TODO: Have some sort of config struct + yaml file to read in configuration as well
 
 // TCP Server
 type Server struct {
@@ -75,16 +48,26 @@ func (s *Server) Listen() {
 	}
 }
 
-// Hanle incoming messages from a connection
+// Handle incoming messages from a connection
 func (s *Server) HandleConnectionMessages(connection *Connection) {
 	buf := make([]byte, 1024)
 	var request JsonRpcRequest
 
 	for {
+		connections := s.connectionService.ListConnections()
+		log.Printf("[%d] connections listening", len(connections))
+
 		bytesRead, err := connection.Read(buf)
 		message := buf[:bytesRead]
+
 		if err != nil {
 			log.Fatalln("Error reading connection buffer", err.Error())
+			if err == io.EOF {
+				log.Printf("Connection closed: %s", connection.id)
+				s.connectionService.DeleteConnection(connection.id)
+				continue
+			}
+
 		}
 
 		log.Printf("Read [%d] bytes from connection [%s} \n", bytesRead, connection.id)
@@ -99,14 +82,34 @@ func (s *Server) HandleConnectionMessages(connection *Connection) {
 
 		s.dispatcher.Dispatch(request, connection)
 
-		// TODO: Maybe register notification callbacks?
 		if request.Method == "chat" {
-			connections := s.connectionService.ListConnections()
-			log.Printf("[%d] connections on", len(connections))
+			var chatParams ChatRequestParams
+			err = json.Unmarshal(request.Params, &chatParams)
+
+			if err != nil {
+				log.Printf("Failed deserializing request params: [%s] \n", request.Id)
+				continue
+			}
+
+			params, _ := json.Marshal(ChatMessageNotification{Msg: chatParams.Msg})
+			notification := JsonRpcNotification{JsonRpc: JsonRpcVersion, Method: ChatNotificationRpcMethod, Params: params}
+			s.dispatcher.SendNotification(notification, ConnectionsToWriters(connections, connection))
 		}
 
 		clear(buf)
 	}
+}
+
+func ConnectionsToWriters(connections []*Connection, exclude *Connection) []io.Writer {
+	writers := make([]io.Writer, 0)
+
+	for _, c := range connections {
+		if c.id != exclude.id {
+			writers = append(writers, c)
+		}
+	}
+
+	return writers
 }
 
 func ChatMessageHandler(request JsonRpcRequest) JsonRpcResponse {
@@ -116,7 +119,10 @@ func ChatMessageHandler(request JsonRpcRequest) JsonRpcResponse {
 		errorResponse := JsonRpcResponse{Id: request.Id, JsonRpc: request.JsonRpc, Error: &JsonRpcError{Code: -32600, Message: "Invalid Request"}}
 		return errorResponse
 	}
-	response := JsonRpcResponse{Id: request.Id, JsonRpc: request.JsonRpc, Result: SuccessResult{Success: true}}
+
+	result := SuccessResult{Success: true}
+	resultJson, err := json.Marshal(result)
+	response := JsonRpcResponse{Id: request.Id, JsonRpc: request.JsonRpc, Result: resultJson}
 	return response
 }
 

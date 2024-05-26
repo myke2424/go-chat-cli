@@ -8,13 +8,14 @@ import (
 )
 
 const (
-	JsonRpcVersion          = "2.0"
-	ChatRpcMethod           = "chat"
-	CreateUserRpcMethod     = "createUser"
-	CreateChatRoomRpcMethod = "createChatRoom"
-	DeleteChatRoomRpcMethod = "deleteChatRoom"
-	JoinChatRoomRpcMethod   = "joinChatRoom"
-	LeaveChatRoomRpcMethod  = "leaveChatRoom"
+	JsonRpcVersion            = "2.0"
+	ChatRpcMethod             = "chat"
+	CreateUserRpcMethod       = "createUser"
+	CreateChatRoomRpcMethod   = "createChatRoom"
+	DeleteChatRoomRpcMethod   = "deleteChatRoom"
+	JoinChatRoomRpcMethod     = "joinChatRoom"
+	LeaveChatRoomRpcMethod    = "leaveChatRoom"
+	ChatNotificationRpcMethod = "chatNotification"
 )
 
 type JsonRpcRequest struct {
@@ -25,7 +26,13 @@ type JsonRpcRequest struct {
 }
 
 func (r JsonRpcRequest) String() string {
-	return fmt.Sprintf("JsonRpcRequest(id=%s, method=%s)", r.Id, r.Method)
+	var paramsMap map[string]any
+	err := json.Unmarshal(r.Params, &paramsMap)
+	if err != nil {
+		log.Fatal(err)
+	}
+	paramsStr := fmt.Sprintf("%v", paramsMap)
+	return fmt.Sprintf("JsonRpcRequest(id=%s, method=%s, params=%s)", r.Id, r.Method, paramsStr)
 }
 
 type JsonRpcNotification struct {
@@ -35,14 +42,23 @@ type JsonRpcNotification struct {
 }
 
 func (n JsonRpcNotification) String() string {
-	return fmt.Sprintf("JsonRpcNotification(method=%s)", n.Method)
+	if n.Params == nil {
+		return fmt.Sprintf("JsonRpcNotification(method=%s)", n.Method)
+	}
+	var paramsMap map[string]any
+	err := json.Unmarshal(n.Params, &paramsMap)
+	if err != nil {
+		log.Fatal(err)
+	}
+	paramsStr := fmt.Sprintf("%v", paramsMap)
+	return fmt.Sprintf("JsonRpcNotification(method=%s, params=%s)", n.Method, paramsStr)
 }
 
 type JsonRpcResponse struct {
-	JsonRpc string        `json:"jsonrpc"`
-	Result  any           `json:"result,omitempty"`
-	Error   *JsonRpcError `json:"error,omitempty"`
-	Id      string        `json:"id"`
+	JsonRpc string          `json:"jsonrpc"`
+	Result  json.RawMessage `json:"result,omitempty"`
+	Error   *JsonRpcError   `json:"error,omitempty"`
+	Id      string          `json:"id"`
 }
 
 type JsonRpcError struct {
@@ -125,7 +141,7 @@ func (d *JsonRpcDispatcher) SendNotification(notification JsonRpcNotification, r
 		return err
 	}
 
-	log.Printf("Broadcasting notification: [%s] to [%d] receivers\n", notification, len(receivers))
+	log.Printf("Broadcasting notification  to [%d] receivers\n", len(receivers))
 	for _, r := range receivers {
 		_, err := r.Write(notificationJson)
 		if err != nil {
