@@ -2,9 +2,9 @@
 
 # Command to start the server
 server:
-	go run server.go jsonrpc.go connection_service.go
+	go run src/server.go src/jsonrpc.go src/connection_service.go
 
 # Command to start the client
 client:
-	go run client.go jsonrpc.go
+	go run src/client.go src/jsonrpc.go
 
